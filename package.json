@@ -1,0 +1,23 @@
+{
+  "name": "3d_site",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "3D Fashion Gallery with Three.js",
+  "main": "main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": ["three.js", "3d", "fashion", "gallery", "ecommerce"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "three": "^0.180.0",
+    "dat.gui": "^0.7.9",
+    "stats.js": "^0.17.0"
+  },
+  "devDependencies": {
+    "vite": "^7.1.12"
+  }
+}
