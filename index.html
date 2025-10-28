@@ -22,10 +22,36 @@
             position: fixed;
             top: 0;
             left: 0;
+            cursor: default;
         }
         
         canvas {
             display: block;
+        }
+        
+        /* Кнопка управления меню */
+        .menu-toggle {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            border: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            z-index: 101;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .menu-toggle:hover {
+            background: rgba(255, 255, 255, 1);
+            transform: translateX(-50%) translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
         }
         
         /* Центральное меню */
@@ -42,6 +68,8 @@
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
             z-index: 100;
             transition: all 0.3s ease;
+            opacity: 1;
+            pointer-events: auto;
         }
         
         .menu-header {
@@ -53,6 +81,7 @@
             color: #333;
             font-size: 1.5rem;
             margin-bottom: 0.5rem;
+            font-weight: 600;
         }
         
         .brands {
@@ -60,6 +89,7 @@
             justify-content: center;
             gap: 0.5rem;
             margin-bottom: 1.5rem;
+            flex-wrap: wrap;
         }
         
         .brand-tag {
@@ -68,6 +98,7 @@
             border-radius: 15px;
             font-size: 0.8rem;
             color: #666;
+            font-weight: 500;
         }
         
         .menu-items {
@@ -85,6 +116,7 @@
             transition: all 0.3s ease;
             text-align: left;
             font-size: 1rem;
+            font-weight: 500;
         }
         
         .menu-item:hover {
@@ -104,6 +136,7 @@
             padding: 10px 20px;
             border-radius: 10px;
             z-index: 100;
+            font-size: 14px;
         }
         
         /* Загрузка */
@@ -130,6 +163,10 @@
 
     <div id="canvas-container"></div>
     
+    <!-- Кнопка управления меню -->
+    <button id="toggleMenuBtn" class="menu-toggle">Скрыть меню</button>
+    
+    <!-- Центральное меню -->
     <div class="center-menu">
         <div class="menu-header">
             <h1>FASHION GALLERY</h1>
@@ -141,15 +178,15 @@
             </div>
         </div>
         <div class="menu-items">
-            <button class="menu-item" data-category="sneakers">👟 Кроссовки</button>
-            <button class="menu-item" data-category="boots">🥾 Ботинки</button>
-            <button class="menu-item" data-category="shoes">👞 Обувь</button>
-            <button class="menu-item" data-category="accessories">🎒 Аксессуары</button>
+            <button class="menu-item" data-category="sneakers">Кроссовки</button>
+            <button class="menu-item" data-category="boots">Ботинки</button>
+            <button class="menu-item" data-category="shoes">Обувь</button>
+            <button class="menu-item" data-category="accessories">Аксессуары</button>
         </div>
     </div>
 
     <div class="instructions">
-        🔄 Вращайте сцену мышью | 📱 На мобильных - касанием
+        Наведите курсор на стену для вращения | На мобильных - касанием | Управляйте меню кнопкой сверху
     </div>
 
     <script type="module" src="/main.js"></script>
