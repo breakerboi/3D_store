@@ -279,6 +279,9 @@ function setupEventListeners() {
     // Ресайз окна
     window.addEventListener('resize', onWindowResize);
     
+    // Обработка клавиши ESC
+    document.addEventListener('keydown', onKeyDown);
+    
     // Клики по меню
     document.querySelectorAll('.menu-item').forEach(item => {
         item.addEventListener('click', (e) => {
@@ -301,6 +304,15 @@ function setupEventListeners() {
             e.stopPropagation();
         }
     });
+}
+
+// Обработка нажатия клавиш
+function onKeyDown(event) {
+    // ESC ключ
+    if (event.keyCode === 27 || event.key === 'Escape') {
+        toggleMenu();
+        event.preventDefault();
+    }
 }
 
 // Функция для проверки пересечения с стеной
