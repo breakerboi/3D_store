@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
@@ -10,12 +10,12 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             overflow: hidden;
             font-family: 'Arial', sans-serif;
         }
-        
+
         #canvas-container {
             width: 100vw;
             height: 100vh;
@@ -24,12 +24,11 @@
             left: 0;
             cursor: default;
         }
-        
+
         canvas {
             display: block;
         }
-        
-        /* Кнопка управления меню */
+
         .menu-toggle {
             position: absolute;
             top: 20px;
@@ -47,14 +46,13 @@
             font-size: 14px;
             font-weight: 500;
         }
-        
+
         .menu-toggle:hover {
             background: rgba(255, 255, 255, 1);
             transform: translateX(-50%) translateY(-2px);
             box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
         }
-        
-        /* Центральное меню */
+
         .center-menu {
             position: absolute;
             top: 50%;
@@ -71,19 +69,19 @@
             opacity: 1;
             pointer-events: auto;
         }
-        
+
         .menu-header {
             text-align: center;
             margin-bottom: 1.5rem;
         }
-        
+
         .menu-header h1 {
             color: #333;
             font-size: 1.5rem;
             margin-bottom: 0.5rem;
             font-weight: 600;
         }
-        
+
         .brands {
             display: flex;
             justify-content: center;
@@ -91,7 +89,7 @@
             margin-bottom: 1.5rem;
             flex-wrap: wrap;
         }
-        
+
         .brand-tag {
             background: #f0f0f0;
             padding: 0.3rem 0.8rem;
@@ -100,13 +98,13 @@
             color: #666;
             font-weight: 500;
         }
-        
+
         .menu-items {
             display: flex;
             flex-direction: column;
             gap: 0.5rem;
         }
-        
+
         .menu-item {
             padding: 1rem;
             background: #f8f8f8;
@@ -118,13 +116,12 @@
             font-size: 1rem;
             font-weight: 500;
         }
-        
+
         .menu-item:hover {
             background: #e0e0e0;
             transform: translateX(5px);
         }
-        
-        /* Инструкция */
+
         .instructions {
             position: absolute;
             bottom: 20px;
@@ -138,8 +135,13 @@
             z-index: 100;
             font-size: 14px;
         }
-        
-        /* Загрузка */
+
+        @media (hover: none) and (pointer: coarse) {
+            .instructions {
+                display: none;
+            }
+        }
+
         .loading {
             position: fixed;
             top: 0;
@@ -162,11 +164,9 @@
     </div>
 
     <div id="canvas-container"></div>
-    
-    <!-- Кнопка управления меню -->
+
     <button id="toggleMenuBtn" class="menu-toggle">Скрыть меню</button>
-    
-    <!-- Центральное меню -->
+
     <div class="center-menu">
         <div class="menu-header">
             <h1>FASHION GALLERY</h1>
