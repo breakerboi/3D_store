@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+﻿import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 console.log('Three.js version:', THREE.REVISION);
@@ -10,19 +10,25 @@ let touchStartPoint = { x: 0, y: 0 };
 let touchMoved = false;
 let suppressNextCanvasClick = false;
 let ignoreNextClickUntil = 0;
+let helpFadeTimeoutId = null;
+let helpHideTimeoutId = null;
+let productCardVisible = false;
+let currentCardProductKey = '';
 let targetRotation = 0;
 let currentRotation = 0;
 const isMobileDevice = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia('(pointer: coarse)').matches;
+const HELP_TOTAL_DURATION_MS = 10000;
+const HELP_FADE_DURATION_MS = 1200;
 
-// Переменная для отслеживания состояния меню
+// РџРµСЂРµРјРµРЅРЅР°СЏ РґР»СЏ РѕС‚СЃР»РµР¶РёРІР°РЅРёСЏ СЃРѕСЃС‚РѕСЏРЅРёСЏ РјРµРЅСЋ
 let isMenuVisible = true;
 
-// Переменные для управления освещением
+// РџРµСЂРµРјРµРЅРЅС‹Рµ РґР»СЏ СѓРїСЂР°РІР»РµРЅРёСЏ РѕСЃРІРµС‰РµРЅРёРµРј
 let ambientLight, directionalLight, wallLight;
 let targetLightIntensity = 1.0;
 let currentLightIntensity = 1.0;
 
-// Для определения взаимодействия со стеной
+// Р”Р»СЏ РѕРїСЂРµРґРµР»РµРЅРёСЏ РІР·Р°РёРјРѕРґРµР№СЃС‚РІРёСЏ СЃРѕ СЃС‚РµРЅРѕР№
 let walls;
 let raycaster;
 let mouse;
@@ -42,14 +48,45 @@ const SHOE_INERTIA_DAMPING = 0.94;
 const SHOE_INERTIA_MIN_VELOCITY = 0.0002;
 const TOUCH_TAP_MAX_MOVE = 14;
 const TOUCH_ROTATION_SENSITIVITY = 0.0056;
+const SHOE_ZOOM_SOUND_URL = '/sounds/shoe-zoom.wav';
+const SHOE_ZOOM_SOUND_VOLUME = 0.65;
+const MENU_ENTER_SOUND_URL = '/sounds/menu_enter.wav';
+const MENU_OUT_SOUND_URL = '/sounds/menu_out.wav';
+const MENU_SOUND_VOLUME = 0.7;
+const PRODUCT_CATALOG = {
+    converse_chuck_70: {
+        brand: 'Converse',
+        title: 'Chuck Taylor 70',
+        description: 'Классическая высокая модель с плотным канвасом, усиленной стелькой и винтажной отделкой. Подходит для повседневных образов и легких streetwear-сетов.',
+        price: '11 990 ₽',
+        sizes: 'Размеры: EU 40, 41, 42, 43, 44'
+    },
+    vans_old_skool_green: {
+        brand: 'Vans',
+        title: 'Old Skool Green',
+        description: 'Иконический силуэт с фирменной боковой полосой, замшево-канвасным верхом и мягким воротником. Универсальная пара для city casual и скейт-эстетики.',
+        price: '10 490 ₽',
+        sizes: 'Размеры: EU 39, 40, 41, 42, 43, 44'
+    }
+};
+
+let shoeZoomAudio = null;
+let menuEnterAudio = null;
+let menuOutAudio = null;
 
 let adminViewerActive = false;
 let adminHud = null;
+let adminCrosshair = null;
+let adminCrosshairActive = false;
+let adminExitTransitionActive = false;
 let lastFrameTime = performance.now();
 const adminMoveState = { forward: false, back: false, left: false, right: false };
+const adminShoeRotateState = { left: false, right: false };
 const adminMoveSpeed = 4.0;
 const adminLookSensitivity = 0.002;
 const adminPitchLimit = Math.PI / 2 - 0.01;
+const ADMIN_RETURN_SPEED = 4.8;
+const ADMIN_SHOE_ROTATE_SPEED = 1.8;
 const initialCameraPosition = new THREE.Vector3();
 const initialCameraQuaternion = new THREE.Quaternion();
 let adminYaw = 0;
@@ -70,7 +107,7 @@ function init() {
         console.log('Scene initialized successfully!');
     } catch (error) {
         console.error('Error during initialization:', error);
-        document.getElementById('loading').innerHTML = 'Ошибка загрузки: ' + error.message;
+        document.getElementById('loading').innerHTML = 'РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё: ' + error.message;
     }
 }
 
@@ -93,13 +130,40 @@ function createScene() {
     
     container.appendChild(renderer.domElement);
     
-    // Инициализация Raycaster для определения пересечений
+    // РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ Raycaster РґР»СЏ РѕРїСЂРµРґРµР»РµРЅРёСЏ РїРµСЂРµСЃРµС‡РµРЅРёР№
     raycaster = new THREE.Raycaster();
     mouse = new THREE.Vector2();
 
     initialCameraPosition.copy(camera.position);
     initialCameraQuaternion.copy(camera.quaternion);
     createAdminHud();
+    setupAudio();
+}
+
+function setupAudio() {
+    shoeZoomAudio = new Audio(SHOE_ZOOM_SOUND_URL);
+    shoeZoomAudio.preload = 'auto';
+    shoeZoomAudio.volume = SHOE_ZOOM_SOUND_VOLUME;
+
+    menuEnterAudio = new Audio(MENU_ENTER_SOUND_URL);
+    menuEnterAudio.preload = 'auto';
+    menuEnterAudio.volume = MENU_SOUND_VOLUME;
+
+    menuOutAudio = new Audio(MENU_OUT_SOUND_URL);
+    menuOutAudio.preload = 'auto';
+    menuOutAudio.volume = MENU_SOUND_VOLUME;
+}
+
+function playShoeZoomSound() {
+    if (!shoeZoomAudio) return;
+    shoeZoomAudio.currentTime = 0;
+    shoeZoomAudio.play().catch(() => {});
+}
+
+function playMenuSound(audio) {
+    if (!audio) return;
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
 }
 
 function createAdminHud() {
@@ -119,6 +183,23 @@ function createAdminHud() {
     adminHud.style.display = 'none';
     adminHud.textContent = 'x: 0.00  y: 0.00  z: 0.00';
     document.body.appendChild(adminHud);
+
+    adminCrosshair = document.createElement('div');
+    adminCrosshair.id = 'admin-viewer-crosshair';
+    adminCrosshair.style.position = 'fixed';
+    adminCrosshair.style.left = '50%';
+    adminCrosshair.style.top = '50%';
+    adminCrosshair.style.transform = 'translate(-50%, -50%)';
+    adminCrosshair.style.color = '#ffffff';
+    adminCrosshair.style.fontFamily = 'Consolas, monospace';
+    adminCrosshair.style.fontSize = '28px';
+    adminCrosshair.style.fontWeight = '700';
+    adminCrosshair.style.textShadow = '0 0 6px rgba(0, 0, 0, 0.75)';
+    adminCrosshair.style.zIndex = '1501';
+    adminCrosshair.style.pointerEvents = 'none';
+    adminCrosshair.style.display = 'none';
+    adminCrosshair.textContent = '+';
+    document.body.appendChild(adminCrosshair);
 }
 
 function setAdminViewerActive(active) {
@@ -126,6 +207,7 @@ function setAdminViewerActive(active) {
     adminViewerActive = active;
 
     if (adminViewerActive) {
+        adminExitTransitionActive = false;
         const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
         adminPitch = euler.x;
         adminYaw = euler.y;
@@ -136,6 +218,7 @@ function setAdminViewerActive(active) {
             adminHud.style.display = 'block';
             updateAdminHud();
         }
+        setAdminCrosshairActive(false);
         return;
     }
 
@@ -143,8 +226,9 @@ function setAdminViewerActive(active) {
     adminMoveState.back = false;
     adminMoveState.left = false;
     adminMoveState.right = false;
-    camera.position.copy(initialCameraPosition);
-    camera.quaternion.copy(initialCameraQuaternion);
+    adminShoeRotateState.left = false;
+    adminShoeRotateState.right = false;
+    adminExitTransitionActive = true;
     adminPitch = 0;
     adminYaw = 0;
     if (document.pointerLockElement) {
@@ -155,6 +239,7 @@ function setAdminViewerActive(active) {
     if (adminHud) {
         adminHud.style.display = 'none';
     }
+    setAdminCrosshairActive(false);
 }
 
 function updateAdminViewerMovement(deltaSeconds) {
@@ -182,7 +267,19 @@ function updateAdminViewerMovement(deltaSeconds) {
 
 function updateAdminHud() {
     if (!adminHud) return;
-    adminHud.textContent = `x: ${camera.position.x.toFixed(2)}  y: ${camera.position.y.toFixed(2)}  z: ${camera.position.z.toFixed(2)}`;
+    const coords = `x: ${camera.position.x.toFixed(2)}  y: ${camera.position.y.toFixed(2)}  z: ${camera.position.z.toFixed(2)}`;
+    if (focusedShoe && adminViewerActive) {
+        adminHud.innerHTML = `${coords}<div style="margin-top: 10px;">Chuck Taylor 70</div>`;
+    } else {
+        adminHud.textContent = coords;
+    }
+}
+
+function setAdminCrosshairActive(active) {
+    adminCrosshairActive = active && adminViewerActive && !isMobileDevice;
+    if (adminCrosshair) {
+        adminCrosshair.style.display = adminCrosshairActive ? 'block' : 'none';
+    }
 }
 
 
@@ -198,8 +295,7 @@ function onPointerLockChange() {
     const canvas = renderer && renderer.domElement;
     if (!adminViewerActive || !canvas) return;
     if (document.pointerLockElement !== canvas) {
-        document.body.style.cursor = 'none';
-        renderer.domElement.style.cursor = 'none';
+        requestAdminPointerLock();
     }
 }
 
@@ -216,64 +312,38 @@ function onAdminMouseMove(event) {
 }
 
 function createRoom() {
-    // Создаем группу для всей комнаты
+    // РЎРѕР·РґР°РµРј РіСЂСѓРїРїСѓ РґР»СЏ РІСЃРµР№ РєРѕРјРЅР°С‚С‹
     roomGroup = new THREE.Group();
     scene.add(roomGroup);
     
-    // Создаем пол
+    // РЎРѕР·РґР°РµРј РїРѕР»
     createFloor();
     
-    // Создаем стены
+    // РЎРѕР·РґР°РµРј СЃС‚РµРЅС‹
     createWalls();
     
-    // Создаем потолок
+    // РЎРѕР·РґР°РµРј РїРѕС‚РѕР»РѕРє
     createCeiling();
     
-    // Добавляем рамки на стены
+    // Р”РѕР±Р°РІР»СЏРµРј СЂР°РјРєРё РЅР° СЃС‚РµРЅС‹
     addWallObjects();
     
     console.log('Room created with walls, floor, ceiling and picture frames');
 }
 
 function createFloor() {
-    // Создаем текстуру ламината
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 512;
-    const context = canvas.getContext('2d');
-
-    // Рисуем узор ламината
-    context.fillStyle = '#8B4513';
-    context.fillRect(0, 0, 512, 512);
-    
-    context.strokeStyle = '#A0522D';
-    context.lineWidth = 2;
-    
-    // Рисуем линии ламината
-    for (let x = 0; x < 512; x += 64) {
-        context.beginPath();
-        context.moveTo(x, 0);
-        context.lineTo(x, 512);
-        context.stroke();
-    }
-    
-    for (let y = 0; y < 512; y += 64) {
-        context.beginPath();
-        context.moveTo(0, y);
-        context.lineTo(512, y);
-        context.stroke();
-    }
-    
-    const texture = new THREE.CanvasTexture(canvas);
+    const texture = new THREE.TextureLoader().load('/textures/floor.jpg');
+    texture.colorSpace = THREE.SRGBColorSpace;
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(8, 8);
+    texture.repeat.set(6, 6);
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
     const floorGeometry = new THREE.CircleGeometry(15, 32);
     const floorMaterial = new THREE.MeshStandardMaterial({ 
         map: texture,
-        roughness: 0.8,
-        metalness: 0.2
+        roughness: 0.9,
+        metalness: 0.05
     });
     
     const floor = new THREE.Mesh(floorGeometry, floorMaterial);
@@ -285,28 +355,42 @@ function createFloor() {
 }
 
 function createWalls() {
-    // Создаем стены бежевого цвета
+    const wallTexture = new THREE.TextureLoader().load('/textures/wall.jpg');
+    wallTexture.colorSpace = THREE.SRGBColorSpace;
+    wallTexture.wrapS = THREE.RepeatWrapping;
+    wallTexture.wrapT = THREE.RepeatWrapping;
+    wallTexture.repeat.set(32, 3.2);
+    wallTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
     const wallGeometry = new THREE.CylinderGeometry(12, 12, 8, 36, 1, true);
-    const wallMaterial = new THREE.MeshStandardMaterial({ 
-        color: 0xF5F5DC,
+    const wallMaterial = new THREE.MeshStandardMaterial({
+        map: wallTexture,
+        color: 0xffffff,
         side: THREE.DoubleSide,
-        roughness: 0.7,
-        metalness: 0.1
+        roughness: 0.9,
+        metalness: 0.04
     });
-    
+
     walls = new THREE.Mesh(wallGeometry, wallMaterial);
     walls.position.y = 0;
-    
+
     roomGroup.add(walls);
 }
 
 function createCeiling() {
-    // Создаем потолок
+    const ceilingTexture = new THREE.TextureLoader().load('/textures/ceiling.jpg');
+    ceilingTexture.colorSpace = THREE.SRGBColorSpace;
+    ceilingTexture.wrapS = THREE.RepeatWrapping;
+    ceilingTexture.wrapT = THREE.RepeatWrapping;
+    ceilingTexture.repeat.set(3, 3);
+    ceilingTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
     const ceilingGeometry = new THREE.CircleGeometry(12, 32);
     const ceilingMaterial = new THREE.MeshStandardMaterial({ 
-        color: 0xE8E8E8,
+        map: ceilingTexture,
+        color: 0xffffff,
         roughness: 0.9,
-        metalness: 0.1
+        metalness: 0.05
     });
     
     const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
@@ -315,7 +399,7 @@ function createCeiling() {
     
     roomGroup.add(ceiling);
     
-    // Добавляем светильник на потолок
+    // Р”РѕР±Р°РІР»СЏРµРј СЃРІРµС‚РёР»СЊРЅРёРє РЅР° РїРѕС‚РѕР»РѕРє
     const lightFixtureGeometry = new THREE.CylinderGeometry(0.5, 0.8, 0.2, 16);
     const lightFixtureMaterial = new THREE.MeshStandardMaterial({ 
         color: 0xCCCCCC,
@@ -331,7 +415,7 @@ function createCeiling() {
 function createPictureFrame(width, height, frameWidth, color = 0x8B4513) {
     const frameGroup = new THREE.Group();
     
-    // Внешняя рамка
+    // Р’РЅРµС€РЅСЏСЏ СЂР°РјРєР°
     const frameGeometry = new THREE.BoxGeometry(width + frameWidth * 2, height + frameWidth * 2, 0.15);
     const frameMaterial = new THREE.MeshStandardMaterial({ 
         color: color,
@@ -340,7 +424,7 @@ function createPictureFrame(width, height, frameWidth, color = 0x8B4513) {
     });
     const frame = new THREE.Mesh(frameGeometry, frameMaterial);
     
-    // Внутренняя часть (холст)
+    // Р’РЅСѓС‚СЂРµРЅРЅСЏСЏ С‡Р°СЃС‚СЊ (С…РѕР»СЃС‚)
     const canvasGeometry = new THREE.PlaneGeometry(width * 0.95, height * 0.95);
     const canvasMaterial = new THREE.MeshStandardMaterial({ 
         color: 0xF8F8F8,
@@ -358,7 +442,7 @@ function createPictureFrame(width, height, frameWidth, color = 0x8B4513) {
 }
 
 function addPictureFrames() {
-    // Цвета для рамок (деревянные оттенки)
+    // Р¦РІРµС‚Р° РґР»СЏ СЂР°РјРѕРє (РґРµСЂРµРІСЏРЅРЅС‹Рµ РѕС‚С‚РµРЅРєРё)
     const frameColors = [
         0x8B4513,
         0xA0522D,
@@ -368,12 +452,12 @@ function addPictureFrames() {
         0xDAA520
     ];
     
-    // Добавляем рамки на стены
+    // Р”РѕР±Р°РІР»СЏРµРј СЂР°РјРєРё РЅР° СЃС‚РµРЅС‹
     for (let i = 0; i < 8; i++) {
         const color = frameColors[i % frameColors.length];
         const frame = createPictureFrame(2.2, 1.6, 0.15, color);
         
-        // Располагаем рамки на стенах
+        // Р Р°СЃРїРѕР»Р°РіР°РµРј СЂР°РјРєРё РЅР° СЃС‚РµРЅР°С…
         const angle = (i / 8) * Math.PI * 2;
         const radius = 11.9;
         
@@ -383,10 +467,10 @@ function addPictureFrames() {
             Math.sin(angle) * radius
         );
         
-        // Поворачиваем рамки к центру
+        // РџРѕРІРѕСЂР°С‡РёРІР°РµРј СЂР°РјРєРё Рє С†РµРЅС‚СЂСѓ
         frame.lookAt(0, frame.position.y, 0);
         
-        // Убираем тени с рамок чтобы избежать артефактов
+        // РЈР±РёСЂР°РµРј С‚РµРЅРё СЃ СЂР°РјРѕРє С‡С‚РѕР±С‹ РёР·Р±РµР¶Р°С‚СЊ Р°СЂС‚РµС„Р°РєС‚РѕРІ
         frame.traverse((child) => {
             if (child.isMesh) {
                 child.castShadow = false;
@@ -409,7 +493,7 @@ function createLights() {
     directionalLight.castShadow = false;
     scene.add(directionalLight);
     
-    // Точечный свет для лучшего освещения стен
+    // РўРѕС‡РµС‡РЅС‹Р№ СЃРІРµС‚ РґР»СЏ Р»СѓС‡С€РµРіРѕ РѕСЃРІРµС‰РµРЅРёСЏ СЃС‚РµРЅ
     wallLight = new THREE.PointLight(0xffffff, 0.8);
     wallLight.position.set(0, 3, 0);
     scene.add(wallLight);
@@ -418,22 +502,22 @@ function createLights() {
 function setupEventListeners() {
     const canvas = renderer.domElement;
     
-    // Мышь
+    // РњС‹С€СЊ
     canvas.addEventListener('mousedown', onMouseDown);
     canvas.addEventListener('mousemove', onMouseMove);
     canvas.addEventListener('mouseup', onMouseUp);
     canvas.addEventListener('mouseleave', onMouseLeave);
     canvas.addEventListener('click', onCanvasClick);
     
-    // Сенсорные события
+    // РЎРµРЅСЃРѕСЂРЅС‹Рµ СЃРѕР±С‹С‚РёСЏ
     canvas.addEventListener('touchstart', onTouchStart, { passive: false });
     canvas.addEventListener('touchmove', onTouchMove, { passive: false });
     canvas.addEventListener('touchend', onTouchEnd);
     
-    // Ресайз окна
+    // Р РµСЃР°Р№Р· РѕРєРЅР°
     window.addEventListener('resize', onWindowResize);
     
-    // Обработка клавиши ESC
+    // РћР±СЂР°Р±РѕС‚РєР° РєР»Р°РІРёС€Рё ESC
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
     if (!isMobileDevice) {
@@ -441,7 +525,7 @@ function setupEventListeners() {
         document.addEventListener('pointerlockchange', onPointerLockChange);
     }
     
-    // Клики по меню
+    // РљР»РёРєРё РїРѕ РјРµРЅСЋ
     document.querySelectorAll('.menu-item').forEach(item => {
         item.addEventListener('click', (e) => {
             if (!isMenuVisible) {
@@ -453,11 +537,16 @@ function setupEventListeners() {
         });
     });
     
-    // Кнопка скрытия/показа меню
+    // РљРЅРѕРїРєР° СЃРєСЂС‹С‚РёСЏ/РїРѕРєР°Р·Р° РјРµРЅСЋ
     const toggleMenuBtn = document.getElementById('toggleMenuBtn');
     toggleMenuBtn.addEventListener('click', toggleMenu);
+
+    const helpBtn = document.getElementById('helpBtn');
+    if (helpBtn) {
+        helpBtn.addEventListener('click', showInstructionsTemporarily);
+    }
     
-    // Блокируем клики на canvas когда меню скрыто
+    // Р‘Р»РѕРєРёСЂСѓРµРј РєР»РёРєРё РЅР° canvas РєРѕРіРґР° РјРµРЅСЋ СЃРєСЂС‹С‚Рѕ
     canvas.addEventListener('click', (e) => {
         if (adminViewerActive) {
             requestAdminPointerLock();
@@ -470,7 +559,66 @@ function setupEventListeners() {
     });
 }
 
-// Обработка нажатия клавиш
+// РћР±СЂР°Р±РѕС‚РєР° РЅР°Р¶Р°С‚РёСЏ РєР»Р°РІРёС€
+function showInstructionsTemporarily() {
+    const instructions = document.getElementById('instructions');
+    if (!instructions || isMobileDevice) return;
+
+    if (helpFadeTimeoutId) {
+        clearTimeout(helpFadeTimeoutId);
+        helpFadeTimeoutId = null;
+    }
+    if (helpHideTimeoutId) {
+        clearTimeout(helpHideTimeoutId);
+        helpHideTimeoutId = null;
+    }
+
+    instructions.style.visibility = 'visible';
+    instructions.style.opacity = '1';
+
+    helpFadeTimeoutId = setTimeout(() => {
+        instructions.style.opacity = '0';
+    }, Math.max(0, HELP_TOTAL_DURATION_MS - HELP_FADE_DURATION_MS));
+
+    helpHideTimeoutId = setTimeout(() => {
+        instructions.style.visibility = 'hidden';
+    }, HELP_TOTAL_DURATION_MS);
+}
+
+function updateProductCardVisibility() {
+    const card = document.getElementById('productCard');
+    if (!card) return;
+
+    const shouldShow = Boolean(focusedShoe) && !isReturningShoe;
+    if (shouldShow) {
+        const productKey = focusedShoe.userData.productKey || 'converse_chuck_70';
+        if (productKey !== currentCardProductKey) {
+            const data = PRODUCT_CATALOG[productKey] || PRODUCT_CATALOG.converse_chuck_70;
+            const brandNode = document.getElementById('productCardBrand');
+            const titleNode = document.getElementById('productCardTitle');
+            const descriptionNode = document.getElementById('productCardDescription');
+            const priceNode = document.getElementById('productCardPrice');
+            const sizesNode = document.getElementById('productCardSizes');
+
+            if (brandNode) brandNode.textContent = data.brand;
+            if (titleNode) titleNode.textContent = data.title;
+            if (descriptionNode) descriptionNode.textContent = data.description;
+            if (priceNode) priceNode.textContent = data.price;
+            if (sizesNode) sizesNode.textContent = data.sizes;
+            currentCardProductKey = productKey;
+        }
+    }
+
+    if (shouldShow === productCardVisible) return;
+
+    productCardVisible = shouldShow;
+    card.classList.toggle('visible', shouldShow);
+    card.setAttribute('aria-hidden', shouldShow ? 'false' : 'true');
+    if (!shouldShow) {
+        currentCardProductKey = '';
+    }
+}
+
 function onKeyDown(event) {
     if (event.ctrlKey && event.key.toLowerCase() === 'v' && !event.repeat) {
         setAdminViewerActive(!adminViewerActive);
@@ -485,12 +633,19 @@ function onKeyDown(event) {
             event.preventDefault();
             return;
         }
+        if (key === 't' && !event.repeat) {
+            setAdminCrosshairActive(!adminCrosshairActive);
+            event.preventDefault();
+            return;
+        }
         if (key === 'w') adminMoveState.forward = true;
         if (key === 's') adminMoveState.back = true;
         if (key === 'a') adminMoveState.left = true;
         if (key === 'd') adminMoveState.right = true;
+        if (key === 'q') adminShoeRotateState.left = true;
+        if (key === 'e') adminShoeRotateState.right = true;
 
-        if (key === 'w' || key === 'a' || key === 's' || key === 'd') {
+        if (key === 'w' || key === 'a' || key === 's' || key === 'd' || key === 'q' || key === 'e') {
             event.preventDefault();
             return;
         }
@@ -510,6 +665,8 @@ function onKeyUp(event) {
     if (key === 's') adminMoveState.back = false;
     if (key === 'a') adminMoveState.left = false;
     if (key === 'd') adminMoveState.right = false;
+    if (key === 'q') adminShoeRotateState.left = false;
+    if (key === 'e') adminShoeRotateState.right = false;
 }
 
 function checkWallIntersection(event) {
@@ -517,14 +674,14 @@ function checkWallIntersection(event) {
     
     const rect = renderer.domElement.getBoundingClientRect();
     
-    // Вычисляем нормализованные координаты мыши
+    // Р’С‹С‡РёСЃР»СЏРµРј РЅРѕСЂРјР°Р»РёР·РѕРІР°РЅРЅС‹Рµ РєРѕРѕСЂРґРёРЅР°С‚С‹ РјС‹С€Рё
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     
-    // Обновляем луч
+    // РћР±РЅРѕРІР»СЏРµРј Р»СѓС‡
     raycaster.setFromCamera(mouse, camera);
     
-    // Проверяем пересечение со стенами
+    // РџСЂРѕРІРµСЂСЏРµРј РїРµСЂРµСЃРµС‡РµРЅРёРµ СЃРѕ СЃС‚РµРЅР°РјРё
     const intersects = raycaster.intersectObject(walls);
     
     return intersects.length > 0;
@@ -562,8 +719,24 @@ function getShoeFromMouseEvent(event) {
     if (!obj || obj.userData.shoeIndex === undefined) return null;
     return obj;
 }
+
+function getShoeFromCenterRay() {
+    mouse.set(0, 0);
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(shoes, true);
+    if (!intersects.length) return null;
+
+    let obj = intersects[0].object;
+    while (obj && obj.userData.shoeIndex === undefined && obj.parent) {
+        obj = obj.parent;
+    }
+
+    if (!obj || obj.userData.shoeIndex === undefined) return null;
+    return obj;
+}
+
 function onCanvasClick(event) {
-    if (adminViewerActive) return;
+    if (adminViewerActive && !adminCrosshairActive) return;
     if (isMenuVisible) return;
     if (performance.now() < ignoreNextClickUntil) return;
     if (suppressNextCanvasClick) {
@@ -571,13 +744,14 @@ function onCanvasClick(event) {
         return;
     }
 
-    const clickedShoe = getShoeFromMouseEvent(event);
+    const clickedShoe = adminViewerActive ? getShoeFromCenterRay() : getShoeFromMouseEvent(event);
 
 
     if (focusedShoe) {
         if (clickedShoe !== focusedShoe) return;
         if (isRotatingShoe) return;
 
+        playShoeZoomSound();
         isReturningShoe = true;
         shoeTransitionActive = true;
         return;
@@ -588,6 +762,7 @@ function onCanvasClick(event) {
 
     focusedShoe = clickedShoe;
     isReturningShoe = false;
+    playShoeZoomSound();
     shoeTransitionActive = true;
 }
 function onMouseMove(event) {
@@ -643,14 +818,14 @@ function onMouseDown(event) {
     }
 
     
-    // Проверяем что клик был по стене
+    // РџСЂРѕРІРµСЂСЏРµРј С‡С‚Рѕ РєР»РёРє Р±С‹Р» РїРѕ СЃС‚РµРЅРµ
     const isOverWall = checkWallIntersection(event);
     if (!isOverWall) return;
     
     isDragging = true;
     previousMousePosition.x = event.clientX;
     
-    // Меняем курсор при перетаскивании
+    // РњРµРЅСЏРµРј РєСѓСЂСЃРѕСЂ РїСЂРё РїРµСЂРµС‚Р°СЃРєРёРІР°РЅРёРё
     renderer.domElement.style.cursor = 'grabbing';
     
     event.preventDefault();
@@ -660,7 +835,7 @@ function onMouseUp() {
     isDragging = false;
     isRotatingShoe = false;
     
-    // Возвращаем курсор в зависимости от положения
+    // Р’РѕР·РІСЂР°С‰Р°РµРј РєСѓСЂСЃРѕСЂ РІ Р·Р°РІРёСЃРёРјРѕСЃС‚Рё РѕС‚ РїРѕР»РѕР¶РµРЅРёСЏ
     if (!isMenuVisible && checkWallIntersection({ clientX: previousMousePosition.x, clientY: previousMousePosition.y })) {
         renderer.domElement.style.cursor = 'grab';
     } else {
@@ -743,41 +918,34 @@ function onWindowResize() {
 
 function showProducts(category) {
     console.log('Showing products for category:', category);
-    alert(`Показываем товары категории: ${category}`);
+    alert(`РџРѕРєР°Р·С‹РІР°РµРј С‚РѕРІР°СЂС‹ РєР°С‚РµРіРѕСЂРёРё: ${category}`);
 }
 
-// Функция переключения меню
+// Р¤СѓРЅРєС†РёСЏ РїРµСЂРµРєР»СЋС‡РµРЅРёСЏ РјРµРЅСЋ
 function toggleMenu() {
     const menu = document.querySelector('.center-menu');
     const toggleBtn = document.getElementById('toggleMenuBtn');
     const canvas = renderer.domElement;
-    
+
     if (isMenuVisible) {
-        // Скрываем меню
+        playMenuSound(menuOutAudio);
         menu.style.opacity = '0';
         menu.style.transform = 'translate(-50%, -50%) scale(0.8)';
         menu.style.pointerEvents = 'none';
-        toggleBtn.textContent = 'Показать меню';
-        
-        // Увеличиваем освещение
+        toggleBtn.textContent = '\u041f\u043e\u043a\u0430\u0437\u0430\u0442\u044c \u043c\u0435\u043d\u044e';
         targetLightIntensity = 1.0;
-        
     } else {
-        // Показываем меню
+        playMenuSound(menuEnterAudio);
         menu.style.opacity = '1';
         menu.style.transform = 'translate(-50%, -50%) scale(1)';
         menu.style.pointerEvents = 'auto';
-        toggleBtn.textContent = 'Скрыть меню';
-        
-        // Уменьшаем освещение для эффекта затемнения
+        toggleBtn.textContent = '\u0421\u043a\u0440\u044b\u0442\u044c \u043c\u0435\u043d\u044e';
         targetLightIntensity = 0.3;
     }
-    
+
     isMenuVisible = !isMenuVisible;
-    
-    // Обновляем курсор
+
     if (!isMenuVisible) {
-        // Если меню закрыто, проверяем положение курсора
         const fakeEvent = { clientX: previousMousePosition.x, clientY: previousMousePosition.y };
         const isOverWall = checkWallIntersection(fakeEvent);
         canvas.style.cursor = isOverWall ? 'grab' : 'default';
@@ -785,7 +953,6 @@ function toggleMenu() {
         canvas.style.cursor = 'default';
     }
 }
-
 function animate() {
     requestAnimationFrame(animate);
     const now = performance.now();
@@ -815,6 +982,15 @@ function animate() {
         shoeAngularVelocity = 0;
     }
 
+    if (adminViewerActive && focusedShoe && !isReturningShoe) {
+        if (adminShoeRotateState.left) {
+            focusedShoe.rotation.y += ADMIN_SHOE_ROTATE_SPEED * deltaSeconds;
+        }
+        if (adminShoeRotateState.right) {
+            focusedShoe.rotation.y -= ADMIN_SHOE_ROTATE_SPEED * deltaSeconds;
+        }
+    }
+
     if (focusedShoe) {
         const target = isReturningShoe
             ? focusedShoe.userData.homePosition
@@ -842,71 +1018,115 @@ function animate() {
         updateAdminHud();
     }
 
+    if (adminExitTransitionActive) {
+        const step = Math.min(1, deltaSeconds * ADMIN_RETURN_SPEED);
+        camera.position.lerp(initialCameraPosition, step);
+        camera.quaternion.slerp(initialCameraQuaternion, step);
+
+        const posDone = camera.position.distanceTo(initialCameraPosition) < 0.01;
+        const rotDone = 1 - Math.abs(camera.quaternion.dot(initialCameraQuaternion)) < 0.001;
+        if (posDone && rotDone) {
+            camera.position.copy(initialCameraPosition);
+            camera.quaternion.copy(initialCameraQuaternion);
+            adminExitTransitionActive = false;
+        }
+    }
+
+    updateProductCardVisibility();
     renderer.render(scene, camera);
 }
 function addWallObjects() {
     const loader = new GLTFLoader();
-
-    const model = { url: '/models/chuck_taylor_70.glb', targetHeight: 1.2 };
-
+    let nextShoeIndex = 0;
+    const shoeBaseY = 0.0;
+    const radius = DEFAULT_SHOE_RADIUS + 2.0;
     const count = 8;
+    const slots = Array.from({ length: count }, (_, i) => {
+        const angle = (i / count) * Math.PI * 2;
+        return {
+            position: new THREE.Vector3(
+                Math.cos(angle) * radius,
+                0.5,
+                Math.sin(angle) * radius
+            ),
+            angle
+        };
+    });
+
+    function placeModelInstances(gltf, targetLength, selectedSlots, productKey) {
+        selectedSlots.forEach((slot) => {
+            const obj = gltf.scene.clone(true);
+            obj.updateMatrixWorld(true);
+
+            const box = new THREE.Box3().setFromObject(obj);
+            const size = new THREE.Vector3();
+            const center = new THREE.Vector3();
+            box.getSize(size);
+            box.getCenter(center);
+            obj.position.sub(center);
+
+            const modelLength = Math.max(size.x, size.z, 0.0001);
+            const scale = targetLength / modelLength;
+            obj.scale.setScalar(scale);
+            obj.position.add(slot.position);
+            obj.lookAt(0, obj.position.y, 0);
+            obj.position.add(new THREE.Vector3(
+                Math.cos(slot.angle) * -0.15,
+                0,
+                Math.sin(slot.angle) * -0.15
+            ));
+
+            const alignedBox = new THREE.Box3().setFromObject(obj);
+            obj.position.y += shoeBaseY - alignedBox.min.y;
+
+            obj.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = false;
+                    child.receiveShadow = false;
+                }
+            });
+
+            obj.userData.homePosition = obj.position.clone();
+            obj.userData.shoeIndex = nextShoeIndex++;
+            obj.userData.productKey = productKey;
+            shoes.push(obj);
+            roomGroup.add(obj);
+        });
+    }
+
     loader.load(
-        model.url,
+        '/models/chuck_taylor_70.glb',
         (gltf) => {
-            for (let i = 0; i < count; i++) {
-                const angle = (i / count) * Math.PI * 2;
-                const radius = DEFAULT_SHOE_RADIUS;
-
-                const pos = new THREE.Vector3(
-                    Math.cos(angle) * radius,
-                    0.5,
-                    Math.sin(angle) * radius
-                );
-
-                const obj = gltf.scene.clone(true);
-                obj.updateMatrixWorld(true);
-
-                // Центруем модель по геометрии, чтобы корректно позиционировать у стены
-                const box = new THREE.Box3().setFromObject(obj);
-                const size = new THREE.Vector3();
-                const center = new THREE.Vector3();
-                box.getSize(size);
-                box.getCenter(center);
-                obj.position.sub(center);
-
-                // Масштаб под целевую высоту
-                const scale = model.targetHeight / Math.max(size.y, 0.0001);
-                obj.scale.setScalar(scale);
-
-                obj.position.add(pos);
-
-                // Повернуть к центру
-                obj.lookAt(0, obj.position.y, 0);
-
-                // Небольшой отступ к центру, чтобы не врезаться в стену
-                obj.position.add(new THREE.Vector3(
-                    Math.cos(angle) * -0.15,
-                    0,
-                    Math.sin(angle) * -0.15
-                ));
-
-                obj.traverse((child) => {
-                    if (child.isMesh) {
-                        child.castShadow = false;
-                        child.receiveShadow = false;
-                    }
-                });
-
-                obj.userData.homePosition = obj.position.clone();
-                obj.userData.shoeIndex = i;
-                shoes.push(obj);
-                roomGroup.add(obj);
-            }
+            placeModelInstances(
+                gltf,
+                2.5,
+                slots.filter((_, index) => index % 2 === 0),
+                'converse_chuck_70'
+            );
         },
         undefined,
-        (err) => console.error('GLB load error:', model.url, err)
+        (err) => console.error('GLB load error:', '/models/chuck_taylor_70.glb', err)
+    );
+
+    loader.load(
+        '/models/vans_old_skool_green.glb',
+        (gltf) => {
+            placeModelInstances(
+                gltf,
+                2.5,
+                slots.filter((_, index) => index % 2 === 1),
+                'vans_old_skool_green'
+            );
+        },
+        undefined,
+        (err) => console.error('GLB load error:', '/models/vans_old_skool_green.glb', err)
     );
 }
+
+
+
+
+
 
 
 
