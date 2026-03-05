@@ -14,6 +14,10 @@ let helpFadeTimeoutId = null;
 let helpHideTimeoutId = null;
 let productCardVisible = false;
 let currentCardProductKey = '';
+let selectedCatalogItemId = '';
+let catalogDrawerOpen = false;
+let highlightedShoe = null;
+let selectionMarker = null;
 let targetRotation = 0;
 let currentRotation = 0;
 const isMobileDevice = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia('(pointer: coarse)').matches;
@@ -53,6 +57,11 @@ const SHOE_ZOOM_SOUND_VOLUME = 0.65;
 const MENU_ENTER_SOUND_URL = '/sounds/menu_enter.wav';
 const MENU_OUT_SOUND_URL = '/sounds/menu_out.wav';
 const MENU_SOUND_VOLUME = 0.7;
+const SHOE_SPOTLIGHT_HEIGHT = 1.8;
+const SHOE_SPOTLIGHT_OFFSET_Y = -0.45;
+const SHOE_SPOTLIGHT_INTENSITY = 8.4;
+const SHOE_SPOTLIGHT_DISTANCE = 12.0;
+const SHOE_SPOTLIGHT_ANGLE = Math.PI / 8;
 const PRODUCT_CATALOG = {
     converse_chuck_70: {
         brand: 'Converse',
@@ -69,6 +78,19 @@ const PRODUCT_CATALOG = {
         sizes: 'Размеры: EU 39, 40, 41, 42, 43, 44'
     }
 };
+const MOCK_CATALOG_ITEMS = [
+    { id: 'converse_chuck_70_black', brand: 'Converse', category: 'Кеды', title: 'Chuck Taylor 70 Black', description: 'Плотный канвас, винтажная подошва и амортизация OrthoLite.', price: 11990, sizes: 'EU 40, 41, 42, 43, 44', inStock: true, productKey: 'converse_chuck_70' },
+    { id: 'converse_chuck_70_white', brand: 'Converse', category: 'Кеды', title: 'Chuck Taylor 70 White', description: 'Классический силуэт в светлой палитре для повседневной носки.', price: 11990, sizes: 'EU 39, 40, 41, 42, 43', inStock: true, productKey: 'converse_chuck_70' },
+    { id: 'vans_old_skool_green', brand: 'Vans', category: 'Кеды', title: 'Old Skool Green', description: 'Фирменная боковая полоса, замшево-канвасный верх и цепкая вафельная подошва.', price: 10490, sizes: 'EU 39, 40, 41, 42, 43, 44', inStock: true, productKey: 'vans_old_skool_green' },
+    { id: 'vans_old_skool_black', brand: 'Vans', category: 'Кеды', title: 'Old Skool Black', description: 'Базовый цвет, который легко сочетается с streetwear и casual.', price: 10490, sizes: 'EU 40, 41, 42, 43', inStock: true, productKey: 'vans_old_skool_green' },
+    { id: 'converse_all_star_low', brand: 'Converse', category: 'Кеды', title: 'Chuck Taylor All Star Low', description: 'Низкий профиль для легких повседневных образов.', price: 8990, sizes: 'EU 39, 40, 41, 42', inStock: true, productKey: 'converse_chuck_70' },
+    { id: 'vans_sk8_hi', brand: 'Vans', category: 'Кеды', title: 'SK8-Hi Black', description: 'Высокий силуэт с усиленными зонами износа.', price: 11290, sizes: 'EU 40, 41, 42, 43, 44', inStock: true, productKey: 'vans_old_skool_green' },
+    { id: 'dickies_hoodie_black', brand: 'Dickies', category: 'Одежда', title: 'Hoodie Black', description: 'Плотный флис, свободный крой, базовый черный цвет.', price: 6590, sizes: 'S, M, L, XL', inStock: true, productKey: 'converse_chuck_70' },
+    { id: 'converse_tee_white', brand: 'Converse', category: 'Одежда', title: 'Logo Tee White', description: 'Футболка из мягкого хлопка с контрастным логотипом.', price: 2990, sizes: 'S, M, L', inStock: true, productKey: 'converse_chuck_70' },
+    { id: 'anteater_cap_black', brand: 'Anteater', category: 'Аксессуары', title: '6 Panel Cap Black', description: 'Минималистичная кепка с регулировкой объема.', price: 1690, sizes: 'One size', inStock: true, productKey: 'vans_old_skool_green' },
+    { id: 'converse_backpack_speed', brand: 'Converse', category: 'Аксессуары', title: 'Speed Backpack', description: 'Вместительный рюкзак для города и учебы.', price: 4550, sizes: 'One size', inStock: true, productKey: 'converse_chuck_70' }
+];
+let catalogItems = [...MOCK_CATALOG_ITEMS];
 
 let shoeZoomAudio = null;
 let menuEnterAudio = null;
@@ -101,6 +123,7 @@ function init() {
         createRoom();
         createLights();
         setupEventListeners();
+        initCatalogUi();
         animate();
         
         document.getElementById('loading').style.display = 'none';
@@ -138,6 +161,20 @@ function createScene() {
     initialCameraQuaternion.copy(camera.quaternion);
     createAdminHud();
     setupAudio();
+    createSelectionMarker();
+}
+
+function createSelectionMarker() {
+    const markerGeometry = new THREE.TorusGeometry(0.65, 0.04, 12, 48);
+    const markerMaterial = new THREE.MeshBasicMaterial({
+        color: 0x71b7ff,
+        transparent: true,
+        opacity: 0.9
+    });
+    selectionMarker = new THREE.Mesh(markerGeometry, markerMaterial);
+    selectionMarker.rotation.x = Math.PI / 2;
+    selectionMarker.visible = false;
+    scene.add(selectionMarker);
 }
 
 function setupAudio() {
@@ -286,8 +323,18 @@ function setAdminCrosshairActive(active) {
 function requestAdminPointerLock() {
     const canvas = renderer && renderer.domElement;
     if (!canvas) return;
+    if (!canvas.isConnected) return;
+    if (!document.contains(canvas)) return;
+    if (canvas.ownerDocument !== document) return;
+    const rootNode = typeof canvas.getRootNode === 'function' ? canvas.getRootNode() : document;
+    if (rootNode !== document) return;
     if (document.pointerLockElement !== canvas) {
-        canvas.requestPointerLock();
+        try {
+            const maybePromise = canvas.requestPointerLock();
+            if (maybePromise && typeof maybePromise.catch === 'function') {
+                maybePromise.catch(() => {});
+            }
+        } catch (_) {}
     }
 }
 
@@ -295,7 +342,8 @@ function onPointerLockChange() {
     const canvas = renderer && renderer.domElement;
     if (!adminViewerActive || !canvas) return;
     if (document.pointerLockElement !== canvas) {
-        requestAdminPointerLock();
+        document.body.style.cursor = 'none';
+        renderer.domElement.style.cursor = 'none';
     }
 }
 
@@ -390,7 +438,8 @@ function createCeiling() {
         map: ceilingTexture,
         color: 0xffffff,
         roughness: 0.9,
-        metalness: 0.05
+        metalness: 0.05,
+        side: THREE.DoubleSide
     });
     
     const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
@@ -399,17 +448,55 @@ function createCeiling() {
     
     roomGroup.add(ceiling);
     
-    // Р”РѕР±Р°РІР»СЏРµРј СЃРІРµС‚РёР»СЊРЅРёРє РЅР° РїРѕС‚РѕР»РѕРє
-    const lightFixtureGeometry = new THREE.CylinderGeometry(0.5, 0.8, 0.2, 16);
-    const lightFixtureMaterial = new THREE.MeshStandardMaterial({ 
-        color: 0xCCCCCC,
-        roughness: 0.3,
-        metalness: 0.7
+    // Центральный светильник: подвес с чашей, штангой, кольцом и видимой лампой
+    const fixtureGroup = new THREE.Group();
+
+    const metalMaterial = new THREE.MeshStandardMaterial({
+        color: 0xbfc3c8,
+        roughness: 0.24,
+        metalness: 0.88
     });
-    
-    const lightFixture = new THREE.Mesh(lightFixtureGeometry, lightFixtureMaterial);
-    lightFixture.position.set(0, 3.8, 0);
-    roomGroup.add(lightFixture);
+
+    const canopy = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.06, 28), metalMaterial);
+    canopy.position.y = 3.97;
+    fixtureGroup.add(canopy);
+
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.42, 16), metalMaterial);
+    stem.position.y = 3.74;
+    fixtureGroup.add(stem);
+
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.04, 16, 40), metalMaterial);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 3.50;
+    fixtureGroup.add(ring);
+
+    const bulb = new THREE.Mesh(
+        new THREE.SphereGeometry(0.16, 20, 16),
+        new THREE.MeshStandardMaterial({
+            color: 0xfff7dd,
+            emissive: 0xffefc1,
+            emissiveIntensity: 0.9,
+            roughness: 0.2,
+            metalness: 0.0
+        })
+    );
+    bulb.position.y = 3.48;
+    fixtureGroup.add(bulb);
+
+    const glassShade = new THREE.Mesh(
+        new THREE.SphereGeometry(0.34, 24, 18),
+        new THREE.MeshStandardMaterial({
+            color: 0xfdfbf2,
+            transparent: true,
+            opacity: 0.24,
+            roughness: 0.1,
+            metalness: 0.0
+        })
+    );
+    glassShade.position.y = 3.44;
+    fixtureGroup.add(glassShade);
+
+    roomGroup.add(fixtureGroup);
 }
 
 function createPictureFrame(width, height, frameWidth, color = 0x8B4513) {
@@ -484,17 +571,17 @@ function addPictureFrames() {
 
 function createLights() {
     // Ambient light
-    ambientLight = new THREE.AmbientLight(0xffffff, currentLightIntensity);
+    ambientLight = new THREE.AmbientLight(0xffffff, currentLightIntensity * 0.45);
     scene.add(ambientLight);
     
     // Directional light
-    directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    directionalLight = new THREE.DirectionalLight(0xffffff, 0.56);
     directionalLight.position.set(5, 10, 7);
     directionalLight.castShadow = false;
     scene.add(directionalLight);
     
     // РўРѕС‡РµС‡РЅС‹Р№ СЃРІРµС‚ РґР»СЏ Р»СѓС‡С€РµРіРѕ РѕСЃРІРµС‰РµРЅРёСЏ СЃС‚РµРЅ
-    wallLight = new THREE.PointLight(0xffffff, 0.8);
+    wallLight = new THREE.PointLight(0xffffff, 0.4);
     wallLight.position.set(0, 3, 0);
     scene.add(wallLight);
 }
@@ -585,42 +672,424 @@ function showInstructionsTemporarily() {
     }, HELP_TOTAL_DURATION_MS);
 }
 
+function parseCsv(text) {
+    const rows = [];
+    let current = '';
+    let row = [];
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i += 1) {
+        const char = text[i];
+        const next = text[i + 1];
+
+        if (char === '"') {
+            if (inQuotes && next === '"') {
+                current += '"';
+                i += 1;
+            } else {
+                inQuotes = !inQuotes;
+            }
+            continue;
+        }
+
+        if (char === ',' && !inQuotes) {
+            row.push(current);
+            current = '';
+            continue;
+        }
+
+        if ((char === '\n' || char === '\r') && !inQuotes) {
+            if (char === '\r' && next === '\n') i += 1;
+            row.push(current);
+            if (row.some((cell) => cell.trim() !== '')) rows.push(row);
+            row = [];
+            current = '';
+            continue;
+        }
+
+        current += char;
+    }
+
+    if (current.length > 0 || row.length > 0) {
+        row.push(current);
+        if (row.some((cell) => cell.trim() !== '')) rows.push(row);
+    }
+
+    return rows;
+}
+
+function normalizeHeader(value) {
+    return value.replace(/^\uFEFF/, '').trim().toLowerCase();
+}
+
+function parsePriceValue(value) {
+    if (!value) return null;
+    const cleaned = value.replace(/\s/g, '').replace(/[^\d,.-]/g, '').replace(',', '.');
+    const number = Number.parseFloat(cleaned);
+    return Number.isFinite(number) ? Math.round(number) : null;
+}
+
+function parseStockValue(value) {
+    if (value === undefined || value === null) return 0;
+    const text = String(value).trim();
+    if (!text) return 0;
+    const matches = text.match(/\d+/g);
+    if (!matches) return 0;
+    return matches.reduce((sum, part) => sum + Number.parseInt(part, 10), 0);
+}
+
+function inferProductKey(brand) {
+    if (!brand) return 'converse_chuck_70';
+    const upper = brand.toUpperCase();
+    if (upper.includes('VANS')) return 'vans_old_skool_green';
+    return 'converse_chuck_70';
+}
+
+function extractSizesFromRecord(record) {
+    return Object.entries(record)
+        .filter(([key, value]) => {
+            const normalized = key.toLowerCase();
+            if (['id', 'name', 'price', 'count', 'total', 'notes', 'sold', 'relevant_vk', 'color'].includes(normalized)) return false;
+            return parseStockValue(value) > 0;
+        })
+        .map(([key]) => key.trim());
+}
+
+function parseCatalogSheet(rows, defaultCategory) {
+    if (!rows.length) return [];
+    const headerRowIndex = rows.findIndex((row) => row.some((cell) => normalizeHeader(cell) === 'id') && row.some((cell) => normalizeHeader(cell) === 'name'));
+    if (headerRowIndex === -1) return [];
+
+    const headers = rows[headerRowIndex].map((cell) => normalizeHeader(cell));
+    const dataRows = rows.slice(headerRowIndex + 1);
+    const result = [];
+    let currentBrand = '';
+    let currentCategory = defaultCategory;
+
+    dataRows.forEach((row, idx) => {
+        const record = {};
+        headers.forEach((header, index) => {
+            record[header] = (row[index] || '').trim();
+        });
+
+        const id = (record.id || '').trim();
+        const name = (record.name || '').trim();
+        const price = parsePriceValue(record.price || '');
+        const stock = parseStockValue(record.count || record.total || '');
+
+        const hasData = Boolean(id || price !== null || stock > 0);
+        if (!hasData && name) {
+            const upper = name.toUpperCase();
+            const maybeBrand = upper === name && !name.includes(' ');
+            const looksBrand = maybeBrand || ['CONVERSE', 'VANS', 'SAUCONY', 'DR MARTENS', 'ANTEATER', 'SALE', 'WINTER SALE', 'DICKIES'].includes(upper);
+            if (looksBrand) {
+                currentBrand = name;
+                currentCategory = defaultCategory;
+            } else {
+                currentCategory = name;
+            }
+            return;
+        }
+        if (!hasData || !name) return;
+
+        const sizesArray = extractSizesFromRecord(record);
+        result.push({
+            id: id || `${defaultCategory.toLowerCase()}_${idx}_${name.toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '_')}`,
+            brand: currentBrand || 'Без бренда',
+            category: defaultCategory,
+            title: name,
+            description: `${currentCategory || defaultCategory}. ${name}`,
+            price: price ?? 0,
+            sizes: sizesArray.length ? `Размеры: ${sizesArray.join(', ')}` : 'Размеры: уточняйте',
+            inStock: stock > 0,
+            productKey: inferProductKey(currentBrand)
+        });
+    });
+
+    return result;
+}
+
+async function loadCatalogFromCsv() {
+    const sources = [
+        { url: '/data/shoes.csv', category: 'Обувь' },
+        { url: '/data/clothes.csv', category: 'Одежда' },
+        { url: '/data/accessories.csv', category: 'Аксессуары' }
+    ];
+
+    const loaded = await Promise.all(sources.map(async (source) => {
+        const response = await fetch(source.url, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`Failed to load ${source.url}`);
+        const text = await response.text();
+        const rows = parseCsv(text);
+        return parseCatalogSheet(rows, source.category);
+    }));
+
+    return loaded.flat().filter((item) => item.title && item.price !== null);
+}
+
+function formatPriceRUB(price) {
+    const numeric = Number(price);
+    if (!Number.isFinite(numeric)) return String(price || '');
+    return `${new Intl.NumberFormat('ru-RU').format(numeric)} ₽`;
+}
+
+function setProductCardContent(data) {
+    const brandNode = document.getElementById('productCardBrand');
+    const titleNode = document.getElementById('productCardTitle');
+    const descriptionNode = document.getElementById('productCardDescription');
+    const priceNode = document.getElementById('productCardPrice');
+    const sizesNode = document.getElementById('productCardSizes');
+    if (brandNode) brandNode.textContent = data.brand || '';
+    if (titleNode) titleNode.textContent = data.title || '';
+    if (descriptionNode) descriptionNode.textContent = data.description || '';
+    if (priceNode) priceNode.textContent = typeof data.price === 'number' ? formatPriceRUB(data.price) : (data.price || '');
+    if (sizesNode) sizesNode.textContent = data.sizes || '';
+}
+
+function getCatalogItemById(itemId) {
+    return catalogItems.find((item) => item.id === itemId) || null;
+}
+
+function getAvailableBrands() {
+    return [...new Set(catalogItems.map((item) => item.brand))].sort();
+}
+
+function getAvailableCategories() {
+    return [...new Set(catalogItems.map((item) => item.category))].sort();
+}
+
+function getFilteredCatalogItems() {
+    const brandFilter = document.getElementById('catalogBrandFilter');
+    const categoryFilter = document.getElementById('catalogCategoryFilter');
+    const sizeFilter = document.getElementById('catalogSizeFilter');
+    const priceFilter = document.getElementById('catalogPriceFilter');
+
+    const brandValue = brandFilter ? brandFilter.value : 'all';
+    const categoryValue = categoryFilter ? categoryFilter.value : 'all';
+    const sizeValue = sizeFilter ? sizeFilter.value.trim().toLowerCase() : '';
+    const maxPrice = priceFilter && priceFilter.value ? Number(priceFilter.value) : null;
+
+    return catalogItems.filter((item) => {
+        if (brandValue !== 'all' && item.brand !== brandValue) return false;
+        if (categoryValue !== 'all' && item.category !== categoryValue) return false;
+        const sizesText = String(item.sizes || '').toLowerCase();
+        if (sizeValue && !sizesText.includes(sizeValue)) return false;
+        if (maxPrice !== null && Number.isFinite(maxPrice) && item.price > maxPrice) return false;
+        return true;
+    });
+}
+
+function renderCatalogList() {
+    const list = document.getElementById('catalogList');
+    if (!list) return;
+    const filteredItems = getFilteredCatalogItems();
+    list.innerHTML = '';
+
+    filteredItems.forEach((item) => {
+        const itemNode = document.createElement('button');
+        itemNode.type = 'button';
+        itemNode.className = `catalog-item${selectedCatalogItemId === item.id ? ' active' : ''}`;
+        itemNode.innerHTML = `
+            <div class="catalog-item-title">${item.title}</div>
+            <div class="catalog-item-meta">${item.brand} · ${item.category}</div>
+            <div class="catalog-item-meta">${formatPriceRUB(item.price)} · ${item.inStock ? 'В наличии' : 'Нет в наличии'}</div>
+        `;
+        itemNode.addEventListener('click', () => selectCatalogItem(item.id));
+        list.appendChild(itemNode);
+    });
+}
+
+function setCatalogDrawerOpen(open) {
+    const drawer = document.getElementById('catalogDrawer');
+    if (!drawer) return;
+    catalogDrawerOpen = open;
+    drawer.classList.toggle('open', open);
+    drawer.setAttribute('aria-hidden', open ? 'false' : 'true');
+    document.body.classList.toggle('catalog-open', open);
+}
+
+function update3DHighlightByProductKey(productKey) {
+    highlightedShoe = shoes.find((shoe) => shoe.userData.productKey === productKey) || null;
+}
+
+function selectCatalogItem(itemId) {
+    if (selectedCatalogItemId === itemId) {
+        selectedCatalogItemId = '';
+        highlightedShoe = null;
+        renderCatalogList();
+        return;
+    }
+
+    const item = getCatalogItemById(itemId);
+    if (!item) return;
+    selectedCatalogItemId = itemId;
+    setProductCardContent(item);
+    update3DHighlightByProductKey(item.productKey);
+    renderCatalogList();
+}
+
+function populateCatalogFilterOptions() {
+    const brandFilter = document.getElementById('catalogBrandFilter');
+    const categoryFilter = document.getElementById('catalogCategoryFilter');
+
+    if (brandFilter) {
+        brandFilter.innerHTML = '<option value="all">Бренд: все</option>';
+        getAvailableBrands().forEach((brand) => {
+            const option = document.createElement('option');
+            option.value = brand;
+            option.textContent = `Бренд: ${brand}`;
+            brandFilter.appendChild(option);
+        });
+    }
+
+    if (categoryFilter) {
+        categoryFilter.innerHTML = '<option value="all">Категория: все</option>';
+        getAvailableCategories().forEach((category) => {
+            const option = document.createElement('option');
+            option.value = category;
+            option.textContent = `Категория: ${category}`;
+            categoryFilter.appendChild(option);
+        });
+    }
+}
+
+async function initCatalogUi() {
+    const brandFilter = document.getElementById('catalogBrandFilter');
+    const categoryFilter = document.getElementById('catalogCategoryFilter');
+    const sizeFilter = document.getElementById('catalogSizeFilter');
+    const priceFilter = document.getElementById('catalogPriceFilter');
+    const catalogToggleBtn = document.getElementById('catalogToggleBtn');
+
+    try {
+        const csvItems = await loadCatalogFromCsv();
+        if (csvItems.length) {
+            catalogItems = csvItems;
+        } else {
+            console.warn('CSV loaded but no valid items found, fallback to mock catalog.');
+        }
+    } catch (error) {
+        console.warn('Failed to load catalog CSV, fallback to mock catalog.', error);
+    }
+
+    populateCatalogFilterOptions();
+
+    if (brandFilter) {
+        brandFilter.addEventListener('change', renderCatalogList);
+    }
+
+    if (categoryFilter) {
+        categoryFilter.addEventListener('change', renderCatalogList);
+    }
+
+    if (sizeFilter) sizeFilter.addEventListener('input', renderCatalogList);
+    if (priceFilter) priceFilter.addEventListener('input', renderCatalogList);
+
+    if (catalogToggleBtn) {
+        catalogToggleBtn.addEventListener('click', () => {
+            setCatalogDrawerOpen(!catalogDrawerOpen);
+        });
+    }
+
+    renderCatalogList();
+}
+
 function updateProductCardVisibility() {
     const card = document.getElementById('productCard');
     if (!card) return;
 
-    const shouldShow = Boolean(focusedShoe) && !isReturningShoe;
-    if (shouldShow) {
-        const productKey = focusedShoe.userData.productKey || 'converse_chuck_70';
-        if (productKey !== currentCardProductKey) {
-            const data = PRODUCT_CATALOG[productKey] || PRODUCT_CATALOG.converse_chuck_70;
-            const brandNode = document.getElementById('productCardBrand');
-            const titleNode = document.getElementById('productCardTitle');
-            const descriptionNode = document.getElementById('productCardDescription');
-            const priceNode = document.getElementById('productCardPrice');
-            const sizesNode = document.getElementById('productCardSizes');
+    const selectedItem = getCatalogItemById(selectedCatalogItemId);
+    const focusedData = focusedShoe && !isReturningShoe
+        ? (PRODUCT_CATALOG[focusedShoe.userData.productKey] || PRODUCT_CATALOG.converse_chuck_70)
+        : null;
 
-            if (brandNode) brandNode.textContent = data.brand;
-            if (titleNode) titleNode.textContent = data.title;
-            if (descriptionNode) descriptionNode.textContent = data.description;
-            if (priceNode) priceNode.textContent = data.price;
-            if (sizesNode) sizesNode.textContent = data.sizes;
-            currentCardProductKey = productKey;
+    const cardData = selectedItem || focusedData;
+    const shouldShow = Boolean(cardData);
+
+    if (cardData) {
+        const key = selectedItem ? `catalog:${selectedItem.id}` : `focused:${focusedShoe.userData.productKey}`;
+        if (key !== currentCardProductKey) {
+            setProductCardContent(cardData);
+            currentCardProductKey = key;
         }
     }
 
     if (shouldShow === productCardVisible) return;
-
     productCardVisible = shouldShow;
     card.classList.toggle('visible', shouldShow);
     card.setAttribute('aria-hidden', shouldShow ? 'false' : 'true');
-    if (!shouldShow) {
-        currentCardProductKey = '';
+    if (!shouldShow) currentCardProductKey = '';
+}
+
+function updateSelectionMarker() {
+    if (!selectionMarker || !roomGroup) return;
+    if (!highlightedShoe) {
+        selectionMarker.visible = false;
+        return;
+    }
+
+    const localTarget = highlightedShoe.userData.homePosition
+        ? highlightedShoe.userData.homePosition.clone()
+        : highlightedShoe.position.clone();
+    const worldTarget = roomGroup.localToWorld(localTarget);
+    selectionMarker.position.set(worldTarget.x, -3.95, worldTarget.z);
+    const pulse = 1 + 0.08 * Math.sin(performance.now() * 0.008);
+    selectionMarker.scale.setScalar(pulse);
+    selectionMarker.visible = true;
+}
+
+function attachShoeSpotlight(shoe) {
+    if (!roomGroup || !shoe) return;
+
+    const light = new THREE.SpotLight(
+        0xffffff,
+        SHOE_SPOTLIGHT_INTENSITY,
+        SHOE_SPOTLIGHT_DISTANCE,
+        SHOE_SPOTLIGHT_ANGLE,
+        0.45,
+        2
+    );
+    light.castShadow = false;
+
+    const target = new THREE.Object3D();
+    roomGroup.add(target);
+    roomGroup.add(light);
+
+    shoe.userData.displaySpotlightAnchor = (shoe.userData.homePosition || shoe.position).clone();
+    shoe.userData.displaySpotlight = light;
+    shoe.userData.displaySpotlightTarget = target;
+}
+
+function updateShoeSpotlights() {
+    for (let i = 0; i < shoes.length; i += 1) {
+        const shoe = shoes[i];
+        const light = shoe.userData.displaySpotlight;
+        const target = shoe.userData.displaySpotlightTarget;
+        const anchor = shoe.userData.displaySpotlightAnchor || shoe.userData.homePosition || shoe.position;
+        if (!light || !target) continue;
+
+        light.position.set(
+            anchor.x,
+            anchor.y + SHOE_SPOTLIGHT_HEIGHT,
+            anchor.z
+        );
+        target.position.set(
+            anchor.x,
+            anchor.y + SHOE_SPOTLIGHT_OFFSET_Y,
+            anchor.z
+        );
+        light.target = target;
     }
 }
 
 function onKeyDown(event) {
-    if (event.ctrlKey && event.key.toLowerCase() === 'v' && !event.repeat) {
+    const keyLower = event.key.toLowerCase();
+    const isAdminShortcut = event.ctrlKey && !event.repeat && (
+        event.code === 'KeyV' ||
+        event.code === 'KeyM' ||
+        keyLower === 'v' ||
+        keyLower === 'м'
+    );
+    if (isAdminShortcut) {
         setAdminViewerActive(!adminViewerActive);
         event.preventDefault();
         return;
@@ -638,20 +1107,31 @@ function onKeyDown(event) {
             event.preventDefault();
             return;
         }
-        if (key === 'w') adminMoveState.forward = true;
-        if (key === 's') adminMoveState.back = true;
-        if (key === 'a') adminMoveState.left = true;
-        if (key === 'd') adminMoveState.right = true;
+        if (key === 'w' || key === 'ц' || key === 'arrowup') adminMoveState.forward = true;
+        if (key === 's' || key === 'ы' || key === 'arrowdown') adminMoveState.back = true;
+        if (key === 'a' || key === 'ф' || key === 'arrowleft') adminMoveState.left = true;
+        if (key === 'd' || key === 'в' || key === 'arrowright') adminMoveState.right = true;
         if (key === 'q') adminShoeRotateState.left = true;
         if (key === 'e') adminShoeRotateState.right = true;
 
-        if (key === 'w' || key === 'a' || key === 's' || key === 'd' || key === 'q' || key === 'e') {
+        if (
+            key === 'w' || key === 'ц' || key === 'arrowup' ||
+            key === 's' || key === 'ы' || key === 'arrowdown' ||
+            key === 'a' || key === 'ф' || key === 'arrowleft' ||
+            key === 'd' || key === 'в' || key === 'arrowright' ||
+            key === 'q' || key === 'e'
+        ) {
             event.preventDefault();
             return;
         }
     }
 
     if (event.keyCode === 27 || event.key === 'Escape') {
+        if (catalogDrawerOpen) {
+            setCatalogDrawerOpen(false);
+            event.preventDefault();
+            return;
+        }
         toggleMenu();
         event.preventDefault();
     }
@@ -661,10 +1141,10 @@ function onKeyUp(event) {
     if (!adminViewerActive) return;
 
     const key = event.key.toLowerCase();
-    if (key === 'w') adminMoveState.forward = false;
-    if (key === 's') adminMoveState.back = false;
-    if (key === 'a') adminMoveState.left = false;
-    if (key === 'd') adminMoveState.right = false;
+    if (key === 'w' || key === 'ц' || key === 'arrowup') adminMoveState.forward = false;
+    if (key === 's' || key === 'ы' || key === 'arrowdown') adminMoveState.back = false;
+    if (key === 'a' || key === 'ф' || key === 'arrowleft') adminMoveState.left = false;
+    if (key === 'd' || key === 'в' || key === 'arrowright') adminMoveState.right = false;
     if (key === 'q') adminShoeRotateState.left = false;
     if (key === 'e') adminShoeRotateState.right = false;
 }
@@ -961,11 +1441,11 @@ function animate() {
 
     currentLightIntensity += (targetLightIntensity - currentLightIntensity) * 0.08;
     if (ambientLight) {
-        ambientLight.intensity = currentLightIntensity;
+        ambientLight.intensity = currentLightIntensity * 0.45;
     }
 
     if (wallLight) {
-        wallLight.intensity = currentLightIntensity * 0.6;
+        wallLight.intensity = currentLightIntensity * 0.4;
     }
 
     if (!focusedShoe) {
@@ -1033,6 +1513,8 @@ function animate() {
     }
 
     updateProductCardVisibility();
+    updateSelectionMarker();
+    updateShoeSpotlights();
     renderer.render(scene, camera);
 }
 function addWallObjects() {
@@ -1091,6 +1573,7 @@ function addWallObjects() {
             obj.userData.productKey = productKey;
             shoes.push(obj);
             roomGroup.add(obj);
+            attachShoeSpotlight(obj);
         });
     }
 
@@ -1103,6 +1586,10 @@ function addWallObjects() {
                 slots.filter((_, index) => index % 2 === 0),
                 'converse_chuck_70'
             );
+            const selectedItem = getCatalogItemById(selectedCatalogItemId);
+            if (selectedItem) {
+                update3DHighlightByProductKey(selectedItem.productKey);
+            }
         },
         undefined,
         (err) => console.error('GLB load error:', '/models/chuck_taylor_70.glb', err)
@@ -1117,6 +1604,10 @@ function addWallObjects() {
                 slots.filter((_, index) => index % 2 === 1),
                 'vans_old_skool_green'
             );
+            const selectedItem = getCatalogItemById(selectedCatalogItemId);
+            if (selectedItem) {
+                update3DHighlightByProductKey(selectedItem.productKey);
+            }
         },
         undefined,
         (err) => console.error('GLB load error:', '/models/vans_old_skool_green.glb', err)

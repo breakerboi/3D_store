@@ -1,21 +1,23 @@
 @echo off
-echo Установка зависимостей...
-call npm install
+setlocal
+chcp 65001 >nul
+title 3D_store setup
+
+echo Installing dependencies...
+call npm install --no-audit --no-fund
 if %errorlevel% neq 0 (
-    echo Ошибка при установке зависимостей!
+    echo Failed to install dependencies.
     pause
     exit /b %errorlevel%
 )
 
-echo Запуск сервера разработки...
-echo Сервер запустится на http://localhost:3000
-echo После полной загрузки браузер откроется автоматически...
+echo Starting dev server...
+echo URL: http://localhost:3000
+echo Press Ctrl+C to stop.
 echo.
-echo Чтобы остановить сервер, закройте это окно или нажмите Ctrl+C
-echo.
-timeout /t 3 /nobreak >nul
+timeout /t 2 /nobreak >nul
 
-echo Запуск сервера разработки...
 start "" chrome "http://localhost:3000"
 call npm run dev -- --host 0.0.0.0 --port 3000
 
+endlocal
